@@ -1,46 +1,38 @@
-# Stage 1: Builder - Install dependencies
-FROM node:25-alpine AS builder
+# Stage 1: Build & Dependencies
+FROM oven/bun:alpine AS builder
 
-# Install git (required for npm to install dependencies from GitHub)
-RUN apk add --no-cache git
-
-# Set working directory
 WORKDIR /app
 
-# Copy package.json and package-lock.json (if available) to leverage Docker cache
-# Use wildcards to ensure both package.json and package-lock.json (or yarn.lock/pnpm-lock.yaml) are copied
-COPY package.json ./
+# Copy package files
+COPY package.json bun.lock* ./
 
-# Install production dependencies
-# This command automatically handles package-lock.json if it exists, otherwise it creates one.
-# For Bun, you might use 'bun install --production'.
-RUN npm install
+# Install production dependencies using Bun
+RUN bun install --production --frozen-lockfile || bun install --production
 
-# Stage 2: Runner - Copy application code and run
-FROM node:25-alpine
+# Stage 2: Runtime
+FROM oven/bun:alpine AS runner
 
-# Set working directory
 WORKDIR /app
 
-# Copy production dependencies from the builder stage
+# Set production environment
+ENV NODE_ENV=production \
+    NODELINK_SERVER_PORT=2333 \
+    NODELINK_SERVER_HOST=0.0.0.0
+
+# Copy node_modules from builder
 COPY --from=builder /app/node_modules ./node_modules
 
-# Copy the rest of the application source code
-# This includes the 'src' directory, default config, and package files for runtime information.
+# Copy application source code
+COPY package.json ./
 COPY src/ ./src/
-COPY config.default.ts ./config.default.ts
-COPY package.json ./package.json
+COPY config.default.js* config.default.ts* ./
 
-# Expose the port the application listens on (default is 3000 from config.default.js)
-EXPOSE 3000
+# Set standard non-root user permissions (UID 1000)
+RUN chown -R 1000:1000 /app
+USER 1000
 
-# Set environment variables for configuration
-# These can be overridden via docker-compose.yml or 'docker run -e'
-# Example: NODELINK_SERVER_PASSWORD=your_secure_password
-ENV NODELINK_SERVER_PORT=3000 \
-    NODELINK_SERVER_HOST=0.0.0.0 \
-    NODELINK_CLUSTER_ENABLED=true
+# Expose NodeLink port
+EXPOSE 2333
 
-# Command to run the application
-# It uses the 'start' script defined in package.json
-CMD ["npm", "start"]
+# Start NodeLink using Bun
+CMD ["bun", "run", "src/index.js"]
