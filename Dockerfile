@@ -3,13 +3,15 @@ FROM oven/bun:alpine AS builder
 
 WORKDIR /app
 
+# Copy package files and install dependencies
 COPY package.json bun.lock* ./
 RUN bun install --frozen-lockfile || bun install
 
+# Copy source code and build dist
 COPY . .
 RUN bun run build || true
 
-# Stage 2: Runtime
+# Stage 2: Runtime image
 FROM oven/bun:alpine AS runner
 
 WORKDIR /app
@@ -22,6 +24,7 @@ COPY package.json ./
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/dist ./dist
 
+# Run as non-root user (UID 1000)
 RUN chown -R 1000:1000 /app
 USER 1000
 
