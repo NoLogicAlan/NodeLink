@@ -1,33 +1,46 @@
-# Stage 1: Build TypeScript source
-FROM oven/bun:alpine AS builder
+# Stage 1: Builder - Install dependencies
+FROM node:25-alpine AS builder
 
+# Install git (required for npm to install dependencies from GitHub)
+RUN apk add --no-cache git
+
+# Set working directory
 WORKDIR /app
 
-COPY package.json bun.lock* ./
-RUN bun install --frozen-lockfile || bun install
-
-COPY . .
-RUN bun run build || true
-
-# Stage 2: Runtime image
-FROM oven/bun:alpine AS runner
-
-WORKDIR /app
-
-ENV NODE_ENV=production \
-    NODELINK_SERVER_PORT=2333 \
-    NODELINK_SERVER_HOST=0.0.0.0
-
+# Copy package.json and package-lock.json (if available) to leverage Docker cache
+# Use wildcards to ensure both package.json and package-lock.json (or yarn.lock/pnpm-lock.yaml) are copied
 COPY package.json ./
+
+# Install production dependencies
+# This command automatically handles package-lock.json if it exists, otherwise it creates one.
+# For Bun, you might use 'bun install --production'.
+RUN npm install
+
+# Stage 2: Runner - Copy application code and run
+FROM node:25-alpine
+
+# Set working directory
+WORKDIR /app
+
+# Copy production dependencies from the builder stage
 COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/config.default.ts ./config.default.ts
 
-# Ensure non-root permissions
-RUN chown -R 1000:1000 /app
-USER 1000
+# Copy the rest of the application source code
+# This includes the 'src' directory, default config, and package files for runtime information.
+COPY src/ ./src/
+COPY config.default.ts ./config.default.ts
+COPY package.json ./package.json
 
-EXPOSE 2333
+# Expose the port the application listens on (default is 3000 from config.default.js)
+EXPOSE 3000
 
-# Start app directly with Bun
-CMD ["bun", "run", "dist/index.js"]
+# Set environment variables for configuration
+# These can be overridden via docker-compose.yml or 'docker run -e'
+# Example: NODELINK_SERVER_PASSWORD=your_secure_password
+ENV NODELINK_SERVER_PORT=3000 \
+    NODELINK_SERVER_HOST=0.0.0.0 \
+    NODELINK_CLUSTER_ENABLED=true
+
+# Command to run the application
+# It uses the 'start' script defined in package.json
+CMD ["npm", "start"]
