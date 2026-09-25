@@ -295,8 +295,11 @@ const getTrackCacheManagerClass = async (): Promise<
 let config: NodelinkConfig
 
 const loadConfig = async (): Promise<NodelinkConfig> => {
-  const resolveRootConfigUrl = (fileName: string): string =>
-    pathToFileURL(resolvePath(process.cwd(), fileName)).href
+  const resolveRootConfigUrl = (fileName: string): string => {
+    const resolvedPath = resolvePath(process.cwd(), fileName)
+    return pathToFileURL(resolvedPath).href
+  }
+
   const resolveConfigExport = (
     importedModule: Record<string, unknown>,
     fileName: string
